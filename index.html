@@ -195,7 +195,7 @@
                 currentUser = u;
                 document.getElementById('login-page').style.display = 'none';
                 document.getElementById('main-page').style.display = 'block';
-                document.getElementById('welcome-name').innerText = u === 'master' ? '1' : '2';
+                document.getElementById('welcome-name').innerText = u === 'master' ? '亲爱的主人' : '乖乖小狗';
                 document.getElementById('role-tag').innerText = u.toUpperCase();
                 await initCloudData();
             } else {
