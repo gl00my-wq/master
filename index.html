@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>专属券管理系统 v2.1</title>
+    <title>专属券云端管理系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/leancloud-storage@4.12.0/dist/av-min.js"></script>
     <style>
         :root {
             --primary-color: #ffb7c5;
@@ -134,17 +135,13 @@
             background: rgba(0,0,0,0.5);
             z-index: 999;
         }
-
-        @media (max-width: 400px) {
-            .coupon-grid { grid-template-columns: 1fr; }
-        }
     </style>
 </head>
 <body>
 
     <div id="login-page">
-        <h2 style="color: #ff7e5f;">💑 契约系统</h2>
-        <input type="text" id="username" class="login-input" placeholder="账号 (master / dog)">
+        <h2 style="color: #ff7e5f;">💑 契约系统(云同步)</h2>
+        <input type="text" id="username" class="login-input" >
         <input type="password" id="password" class="login-input" placeholder="密码">
         <button onclick="login()" style="background: linear-gradient(to right, #ff9a9e, #fecfef); margin-top: 20px;">开启系统</button>
     </div>
@@ -155,11 +152,12 @@
                 <span id="role-tag" style="font-size: 10px; background: #ffebee; color: #ff7e5f; padding: 2px 8px; border-radius: 10px; font-weight: bold;"></span>
                 <div id="welcome-name" style="font-weight: bold; font-size: 18px; margin-top: 5px;"></div>
             </div>
-            <button onclick="location.reload()" style="width: auto; background: #eee; color: #666; font-size: 12px; padding: 5px 12px;">注销退出</button>
+            <button onclick="location.reload()" style="width: auto; background: #eee; color: #666; font-size: 12px; padding: 5px 12px;">退出登录</button>
         </header>
 
         <div class="coupon-grid" id="coupon-container">
-            </div>
+            <p style="grid-column: 1/3; color: #999;">正在连接云端...</p>
+        </div>
     </div>
 
     <div class="overlay" id="overlay"></div>
@@ -171,81 +169,102 @@
     </div>
 
     <script>
-        // 配置：图片与名称对应关系
+        // 【重要：在此处填写你的 LeanCloud 信息】
+        const APP_ID = 'WK6oPI3uWMge6zGeCme1Wqea-MdYXbMMI';
+        const APP_KEY = 'uLTGtfBOrSFXT7mQoHM04usg';
+        const SERVER_URL = 'https://wk6opi3u.api.lncldglobal.com'; 
+
+        // 初始化 LeanCloud
+        AV.init({ appId: APP_ID, appKey: APP_KEY, serverURL: SERVER_URL });
+
         const config = [
-            { id: 'obey', name: '听话卷', img: 'https://cdn-icons-png.flaticon.com/512/3047/3047928.png' }, // 图标不变
+            { id: 'obey', name: '听话卷', img: 'https://cdn-icons-png.flaticon.com/512/3047/3047928.png' },
             { id: 'tea', name: '奶茶卷', img: 'img/drink.jpg' }, 
-            { id: 'food', name: '美食卷', img: 'img/eat.jpg' }, 
+            { id: 'food', name: '美食卷', img: 'img/ear.jpg' }, 
             { id: 'massage', name: '按摩卷', img: 'img/rest.jpg' }
         ];
 
-        // 初始化本地存储数据
-        let data = JSON.parse(localStorage.getItem('couponSystemData_v2')) || {
-            obey: 0, tea: 0, massage: 0, food: 0, lastUpdateDate: ""
-        };
-
         let currentUser = "";
+        let cloudObject = null;
 
-        // 登录逻辑
-        function login() {
+        async function login() {
             const u = document.getElementById('username').value.trim().toLowerCase();
             const p = document.getElementById('password').value;
 
-            if (u === 'master' && p === 'master123') {
-                enterSystem('master');
-            } else if (u === 'dog' && p === 'hjwdog') {
-                enterSystem('dog');
+            if ((u === 'master' && p === 'master123') || (u === 'dog' && p === 'hjwdog')) {
+                currentUser = u;
+                document.getElementById('login-page').style.display = 'none';
+                document.getElementById('main-page').style.display = 'block';
+                document.getElementById('welcome-name').innerText = u === 'master' ? '1' : '2';
+                document.getElementById('role-tag').innerText = u.toUpperCase();
+                await initCloudData();
             } else {
                 showPopup("登录失败", "账号或密码不正确！", false);
             }
         }
 
-        function enterSystem(role) {
-            currentUser = role;
-            document.getElementById('login-page').style.display = 'none';
-            document.getElementById('main-page').style.display = 'block';
-            document.getElementById('welcome-name').innerText = role === 'master' ? '亲爱的主人 👑' : '乖乖小狗 🐶';
-            document.getElementById('role-tag').innerText = role.toUpperCase();
-            
-            checkMondayUpdate();
-            render();
-        }
+        async function initCloudData() {
+            try {
+                const query = new AV.Query('CouponData');
+                cloudObject = await query.first();
 
-        // 周一自动更新逻辑
-        function checkMondayUpdate() {
+                if (!cloudObject) {
+                    console.log("云端无数据，正在创建初始记录...");
+                    const CouponData = AV.Object.extend('CouponData');
+                    const newObject = new CouponData();
+                    
+                    // 赋初值
+                    config.forEach(item => newObject.set(item.id, 0));
+                    newObject.set('lastUpdate', "");
+                    
+                    // 保存并获取返回的对象
+                    cloudObject = await newObject.save();
+                    console.log("数据初始化成功，ObjectId:", cloudObject.id);
+                } else {
+                    console.log("成功连接到云端数据，ID:", cloudObject.id);
+                }
+                render();
+                checkMondayUpdate();
+            } catch (error) {
+                console.error("LeanCloud 初始化失败:", error);
+                showPopup("同步失败", "无法连接到云数据库，请检查网络或权限设置", false);
+            }
+        }
+        
+        async function checkMondayUpdate() {
             const now = new Date();
-            const todayStr = now.getFullYear() + '-' + (now.getMonth() + 1) + '-' + now.getDate();
-            // getDay() 为 1 代表周一
-            if (now.getDay() === 1 && data.lastUpdateDate !== todayStr) {
-                data.tea += 1;
-                data.lastUpdateDate = todayStr;
-                save();
+            const todayStr = now.toDateString();
+            if (now.getDay() === 1 && cloudObject.get('lastUpdate') !== todayStr) {
+                const teaVal = cloudObject.get('tea');
+                cloudObject.set('tea', teaVal + 1);
+                cloudObject.set('lastUpdate', todayStr);
+                await cloudObject.save();
                 showPopup("每周福利", "周一啦！奶茶卷已自动+1 🥤", true);
+                render();
             }
         }
 
-        function changeCount(id, delta) {
+        async function updateCount(id, delta) {
             const item = config.find(c => c.id === id);
+            const currentVal = cloudObject.get(id);
             
-            // Dog 使用权限校验
             if (currentUser === 'dog' && delta < 0) {
-                if (data[id] <= 1) {
+                if (currentVal <= 1) {
                     showPopup("余额不足", `【${item.name}】余额必须大于1才能使用！`, false);
                     return;
                 }
                 showPopup("成功使用", `你使用了一张【${item.name}】✨`, true);
             }
 
-            data[id] += delta;
-            save();
+            cloudObject.set(id, currentVal + delta);
+            await cloudObject.save();
             render();
         }
 
-        // 弹窗控制
         function showPopup(title, msg, showTime) {
             document.getElementById('alert-title').innerText = title;
             document.getElementById('alert-msg').innerText = msg;
-            document.getElementById('alert-time').innerText = showTime ? "操作时间：" + new Date().toLocaleString() : "";
+            document.getElementById('alert-time').innerText = showTime ? "时间：" + new Date().toLocaleString() : "";
             document.getElementById('overlay').style.display = 'block';
             document.getElementById('custom-alert').style.display = 'block';
         }
@@ -255,31 +274,34 @@
             document.getElementById('custom-alert').style.display = 'none';
         }
 
-        function save() {
-            localStorage.setItem('couponSystemData_v2', JSON.stringify(data));
-        }
-
         function render() {
             const container = document.getElementById('coupon-container');
             container.innerHTML = "";
-            
             config.forEach(item => {
+                const val = cloudObject.get(item.id);
                 const card = document.createElement('div');
                 card.className = 'coupon-card';
                 card.innerHTML = `
-                    <img src="${item.img}" onerror="this.src='https://via.placeholder.com/90?text=Error'">
+                    <img src="${item.img}" onerror="this.src='https://via.placeholder.com/90?text=No+Img'">
                     <div style="font-size:13px; color:#888; margin-bottom:5px;">${item.name}</div>
-                    <div class="count">${data[item.id]}</div>
+                    <div class="count">${val}</div>
                     <div>
                         <button class="${currentUser === 'master' ? '' : 'hidden'}" 
-                                onclick="changeCount('${item.id}', 1)" style="background:#b8e994; color:#386641">颁发 +1</button>
+                                onclick="updateCount('${item.id}', 1)" style="background:#b8e994; color:#386641">颁发 +1</button>
                         <button class="${currentUser === 'dog' ? '' : 'hidden'}" 
-                                onclick="changeCount('${item.id}', -1)" style="background:#ff7e5f">立即使用</button>
+                                onclick="updateCount('${item.id}', -1)" style="background:#ff7e5f">立即使用</button>
                     </div>
                 `;
                 container.appendChild(card);
             });
         }
+            // 每 30 秒自动刷新一次数据
+        setInterval(async () => {
+            if (currentUser) {
+                console.log("正在自动同步云端数据...");
+                await initCloudData(); 
+            }
+        }, 30000);
     </script>
 </body>
 </html>
